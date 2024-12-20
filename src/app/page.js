@@ -3,10 +3,12 @@ import { useState, useEffect } from 'react';
 
 export default function Home() {
   const [barangs, setBarangs] = useState([]);
+  const [allBarangs, setAllBarangs] = useState([]); // Untuk menyimpan semua data
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [formData, setFormData] = useState({
     id: null,
     nama: '',
@@ -15,21 +17,83 @@ export default function Home() {
     stok: '',
   });
 
-  const fetchData = async (page = 1) => {
-    const res = await fetch(`/api/barang?page=${page}`);
-    const data = await res.json();
-    setBarangs(data.items || []);
-    setTotalPages(data.totalPages || 1);
+  // Fungsi untuk mengambil semua data
+  const fetchAllData = async () => {
+    try {
+      let allData = [];
+      let currentPage = 1;
+      let hasMoreData = true;
+
+      while (hasMoreData) {
+        const res = await fetch(`/api/barang?page=${currentPage}`);
+        const data = await res.json();
+        
+        if (data.items && data.items.length > 0) {
+          allData = [...allData, ...data.items];
+          currentPage++;
+        } else {
+          hasMoreData = false;
+        }
+      }
+
+      setAllBarangs(allData);
+    } catch (error) {
+      console.error('Error fetching all data:', error);
+    }
+  };
+
+  // Fungsi untuk mengambil data per halaman
+  const fetchPageData = async (pageNumber) => {
+    try {
+      const res = await fetch(`/api/barang?page=${pageNumber}`);
+      const data = await res.json();
+      setBarangs(data.items || []);
+      setTotalPages(data.totalPages || 1);
+    } catch (error) {
+      console.error('Error fetching page data:', error);
+    }
   };
 
   useEffect(() => {
-    fetchData(page);
-  }, [page]);
+    // Ambil semua data untuk pencarian
+    fetchAllData();
+    // Ambil data untuk halaman pertama
+    fetchPageData(page);
+  }, []);
+
+  useEffect(() => {
+    if (!isSearching) {
+      fetchPageData(page);
+    }
+  }, [page, isSearching]);
+
+  const handleSearch = (searchValue) => {
+    setSearchTerm(searchValue);
+    if (searchValue) {
+      setIsSearching(true);
+      const filteredData = allBarangs.filter(barang => 
+        barang.nama.toLowerCase().includes(searchValue.toLowerCase()) ||
+        barang.deskripsi.toLowerCase().includes(searchValue.toLowerCase())
+      );
+      setBarangs(filteredData);
+    } else {
+      setIsSearching(false);
+      fetchPageData(page);
+    }
+  };
 
   const handleDelete = async (id) => {
     if (window.confirm('Apakah Anda yakin ingin menghapus barang ini?')) {
-      await fetch(`/api/barang/${id}`, { method: 'DELETE' });
-      fetchData(page);
+      try {
+        const response = await fetch(`/api/barang/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Gagal menghapus data');
+        
+        // Refresh kedua data
+        fetchAllData();
+        fetchPageData(page);
+      } catch (error) {
+        alert('Terjadi kesalahan: ' + error.message);
+      }
     }
   };
 
@@ -53,7 +117,9 @@ export default function Home() {
       if (!response.ok) throw new Error('Gagal menyimpan data');
       
       setModalOpen(false);
-      fetchData(page);
+      // Refresh kedua data
+      fetchAllData();
+      fetchPageData(page);
       resetForm();
     } catch (error) {
       alert('Terjadi kesalahan: ' + error.message);
@@ -75,11 +141,6 @@ export default function Home() {
     setFormData({ id: null, nama: '', deskripsi: '', harga: '', stok: '' });
   };
 
-  const filteredBarangs = barangs.filter(barang => 
-    barang.nama.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    barang.deskripsi.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="bg-white rounded-lg shadow-lg p-6">
@@ -96,14 +157,13 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Search Bar */}
         <div className="mb-4">
           <div className="relative">
             <input
               type="text"
               placeholder="Cari barang..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearch(e.target.value)}
               className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <div className="absolute inset-y-0 right-0 flex items-center pr-3">
@@ -127,7 +187,7 @@ export default function Home() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredBarangs.map((barang) => (
+              {barangs.map((barang) => (
                 <tr key={barang.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm text-gray-500">{barang.id}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">{barang.nama}</td>
@@ -160,36 +220,37 @@ export default function Home() {
           </table>
         </div>
 
-        <div className="flex items-center justify-between mt-6">
-          <button
-            onClick={() => setPage((p) => Math.max(p - 1, 1))}
-            disabled={page === 1}
-            className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
-              page === 1
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Previous
-          </button>
-          <span className="text-sm text-gray-600">
-            Halaman {page} dari {totalPages}
-          </span>
-          <button
-            onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-            disabled={page === totalPages}
-            className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
-              page === totalPages
-                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Next
-          </button>
-        </div>
+        {!isSearching && (
+          <div className="flex items-center justify-between mt-6">
+            <button
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              disabled={page === 1}
+              className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
+                page === 1
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Previous
+            </button>
+            <span className="text-sm text-gray-600">
+              Halaman {page} dari {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+              disabled={page === totalPages}
+              className={`px-4 py-2 rounded-lg transition-colors duration-200 ${
+                page === totalPages
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Modal tetap sama seperti sebelumnya */}
       {modalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
@@ -246,7 +307,7 @@ export default function Home() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Stok
-                </label>
+                  </label>
                 <input
                   type="number"
                   required
